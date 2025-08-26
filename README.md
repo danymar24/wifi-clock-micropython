@@ -20,6 +20,7 @@ Based on the Hackerbox #65
 * Enter all other information
 
 ## References:
-* Hub75: https://github.com/andycrook/Hub75
+* Hub75: https://github.com/benjohnemmett/Hub75MicroPython
+* fonts: https://github.com/andycrook/Hub75/blob/main/fonts.py
 * DS1307: https://github.com/brainelectronics/micropython-ds1307
 * MicroWebSrv2: https://github.com/jczic/MicroWebSrv2
