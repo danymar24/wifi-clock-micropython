@@ -8,10 +8,16 @@ import time
 # Import the font data from the new fonts.py file.
 # We will use the main 'font' dictionary from the file.
 from font import font_spectrum
+from draw_text import draw_text
+import dht
+from machine import Pin
 
 # Define the size of your matrix.
 ROW_SIZE = 32
 COL_SIZE = 64
+
+# Define the pin for the DHT22 sensor.
+DHT22_PIN = 23
 
 # Initialize the Hub75 configuration and matrix data.
 config = hub75.Hub75SpiConfiguration()
@@ -19,59 +25,45 @@ config = hub75.Hub75SpiConfiguration()
 matrix = matrixdata.MatrixData(ROW_SIZE, COL_SIZE)
 hub75spi = hub75.Hub75Spi(matrix, config)
 
-def draw_text(matrix_data_object, font_data, text, x=0, y=0, color=7):
-    """
-    Draws text onto a 2D list (buffer) by parsing the new font data structure.
+# Initialize the DHT22 sensor object.
+dht_sensor = dht.DHT22(Pin(DHT22_PIN, Pin.IN, Pin.PULL_UP))
 
-    Args:
-        matrix_data_object: The MatrixData object to draw on.
-        font_data: A dictionary where characters are mapped to lists of integers
-                   representing bit-mapped columns.
-        text: The string to display.
-        x: The starting x-coordinate.
-        y: The starting y-coordinate.
-        color: The integer value representing the color.
-    """
-    # Create an empty 2D list to serve as our drawing buffer.
-    # We use 0 as the default value since the library expects integers for colors.
-    buffer = [[0 for _ in range(COL_SIZE)] for _ in range(ROW_SIZE)]
-    
-    cursor_x = x
-    
-    # Iterate through each character in the input string
-    for char in text:
-        if char in font_data:
-            # The pixel data is a list of integers, where each integer represents a column.
-            char_data = font_data[char]
-            
-            # Iterate through each column of the character's bitmap data
-            for col_index, col_data in enumerate(char_data):
-                pixel_x = cursor_x + col_index
-                
-                # Iterate through each bit (row) in the column data.
-                # The font is 8 bits high. We'll iterate in reverse to correct the vertical inversion.
-                for row_index in range(8):
-                    pixel_y = y + (7 - row_index)
-                    
-                    # Check if the bit is set (i.e., the pixel should be on).
-                    # The font data from the provided URL is LSB-first.
-                    if (col_data >> row_index) & 1:
-                        # Set the pixel on our temporary buffer to the integer color value.
-                        if 0 <= pixel_x < COL_SIZE and 0 <= pixel_y < ROW_SIZE:
-                            buffer[pixel_y][pixel_x] = color
-            
-            # Move the cursor to the next character's position, plus a space
-            cursor_x += len(char_data) + 1
-        else:
-            # If the character is not in the font, move the cursor for a space
-            cursor_x += 3
-            
-    # Finally, send the entire buffer to the physical display in one go.
-    matrix_data_object.set_pixels(0, 0, buffer)
+# Variables for timing the sensor reads
+last_update = 0
+UPDATE_INTERVAL_MS = 5000  # 2 seconds in milliseconds
+display_text = "Reading..."  # Initial text to display
 
-# Draw the text on the matrix data using the imported font.
-draw_text(matrix, font_spectrum, "Hello, MicroPython!", x=5, y=10, color=7)
-
-# The main loop handles the display refresh.
+# The main loop now handles the sensor readings and display updates.
 while True:
+    # Get the current time in milliseconds
+    current_time = time.ticks_ms()
+    
+    # Check if 2 seconds have passed since the last sensor reading.
+    if time.ticks_diff(current_time, last_update) >= UPDATE_INTERVAL_MS:
+        try:
+            # Read data from the DHT22 sensor
+            dht_sensor.measure()
+            temperature = dht_sensor.temperature()
+            humidity = dht_sensor.humidity()
+            temperature_f = (temperature * 9 / 5) + 32
+
+            # Format the data into a new string.
+            display_text = "{:.0f}F".format(temperature_f)
+            
+            # Update the last_update time to the current time
+            last_update = current_time
+            
+        except OSError as e:
+            # Handle cases where the sensor read fails, and set an error message.
+            display_text = "Sensor Error"
+            print("Error reading sensor:", e)
+    
+    # Clear the display before drawing new text to prevent ghosting
+    matrix.clear_all_bytes()
+    
+    # Draw the text to the buffer. This happens continuously.
+    draw_text(matrix, font_spectrum, display_text, x=1, y=1, color=7)
+    
+    # Send the updated buffer to the physical display in one go.
+    # This happens continuously, even when the sensor is not being read.
     hub75spi.display_data()
